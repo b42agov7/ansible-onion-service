@@ -1,0 +1,95 @@
+---
+# version 0.1
+# b42agov7
+# 2022-06-30
+- name: Deploy an Onion Service.
+  hosts: YOUR-HOSTS
+  remote_user: YOUR-REMOTE-USER
+  become: yes
+  vars:
+     website_name: "YOUR-WEBSITE-NAME"
+     web_server_ip: "127.0.0.1"
+     web_server_port: "80"
+     hidden_service_port: "80"
+
+  tasks:
+    - name: Install apt-transport-https.
+      apt:
+        name: apt-transport-https
+        state: latest
+
+    - name: Create a new file named tor.list for Trisquel 10.
+      when: (ansible_facts['distribution'] == "Trisquel GNU/Linux" and ansible_facts['distribution_release'] == "nabia")
+      copy:
+        dest: /etc/apt/sources.list.d/tor.list
+        content: |
+          deb     [signed-by=/usr/share/keyrings/tor-archive-keyring.gpg] https://deb.torproject.org/torproject.org focal main
+          deb-src [signed-by=/usr/share/keyrings/tor-archive-keyring.gpg] https://deb.torproject.org/torproject.org focal main
+
+    - name: Create a new file named tor.list for Debian 11.
+      when: (ansible_facts['distribution'] == "Debian GNU/Linux" and ansible_facts['distribution_release'] == "bullseye")
+      copy:
+        dest: /etc/apt/sources.list.d/tor.list
+        content: |
+          deb     [signed-by=/usr/share/keyrings/tor-archive-keyring.gpg] https://deb.torproject.org/torproject.org bullseye main
+          deb-src [signed-by=/usr/share/keyrings/tor-archive-keyring.gpg] https://deb.torproject.org/torproject.org bullseye main
+
+    - name: Create a new file named tor.list for Ubuntu 22.04 LTS.
+      when: (ansible_facts['distribution'] == "Ubuntu" and ansible_facts['distribution_release'] == "jammy")
+      copy:
+        dest: /etc/apt/sources.list.d/tor.list
+        content: |
+          deb     [signed-by=/usr/share/keyrings/tor-archive-keyring.gpg] https://deb.torproject.org/torproject.org jammy main
+          deb-src [signed-by=/usr/share/keyrings/tor-archive-keyring.gpg] https://deb.torproject.org/torproject.org jammy main
+
+    - name: Add the gpg key used to sign the packages.
+      apt_key:
+        url: https://deb.torproject.org/torproject.org/A3C4F0F979CAA22CDBA8F512EE8CBC9E886DDD89.asc
+        keyring: /usr/share/keyrings/tor-archive-keyring.gpg
+        state: present
+
+    - name: Update.
+      apt:
+          update_cache: yes
+
+    - name: Install Tor.
+      apt:
+        name: tor
+        state: latest
+
+    - name: Install tor debian keyring.
+      apt:
+        name: "deb.torproject.org-keyring"
+        state: latest
+
+    #- name: Install the Apache2 web server.
+      #apt:
+        #name: apache2
+        #state: latest
+
+    - name: Test your web server at http://localhost/.
+      uri:
+        url: http://localhost/
+
+    - name: Configure your Tor Onion Service (HiddenServiceDir).
+      lineinfile:
+        path: /etc/tor/torrc
+        line: "HiddenServiceDir /var/lib/tor/{{ website_name }}/"
+
+    - name: Configure your Tor Onion Service (HiddenServicePort).
+      lineinfile:
+        path: /etc/tor/torrc
+        line: "HiddenServicePort {{ hidden_service_port }} {{ web_server_ip }}:{{ web_server_port }}"
+
+    - name: Restart Tor.
+      shell:
+        cmd: systemctl restart tor
+
+    - name: Get your Onion Service address.
+      command: cat /var/lib/tor/{{ website_name }}/hostname
+      register: onion_service_address
+
+    - name: Display your Onion Service address.
+      debug:
+        msg:
+        - "Your Onion Service address: {{ onion_service_address }}"
